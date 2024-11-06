@@ -348,12 +348,12 @@ public class GraphTraverser: GraphTraversing {
         guard let target = target(path: path, name: name), canEmbedFrameworks(target: target.target)
         else { return Set() }
 
-        var references: Set<GraphDependencyReference> = Set([])
+        var references = Set<GraphDependencyReference>()
 
         /// Precompiled frameworks
         var precompiledFrameworks = filterDependencies(
             from: .target(name: name, path: path),
-            test: { $0.isPrecompiledDynamicAndLinkable },
+            test: { $0.isPrecompiledDynamicAndLinkable || $0.isStaticFramework },
             skip: or(canDependencyEmbedBinaries, isDependencyPrecompiledMacro)
         )
         // Skip merged precompiled libraries from merging into the runnable binary
@@ -378,7 +378,7 @@ public class GraphTraverser: GraphTraversing {
         /// Other targets' frameworks.
         var otherTargetFrameworks = filterDependencies(
             from: .target(name: name, path: path),
-            test: isDependencyDynamicTarget,
+            test: isEmbeddableDependencyTarget,
             skip: canDependencyEmbedBinaries
         )
 
@@ -544,7 +544,7 @@ public class GraphTraverser: GraphTraversing {
                     self.graph.dependencies[dependency, default: []]
                         .lazy
                         .filter(\.isTarget)
-                        .filter(isDependencyDynamicTarget)
+                        .filter(isEmbeddableDependencyTarget)
                 }
 
             let staticDependenciesPrecompiledLibrariesAndFrameworks =
@@ -1336,7 +1336,7 @@ public class GraphTraverser: GraphTraversing {
         return target.target.product.isStatic
     }
 
-    func isDependencyStatic(dependency: GraphDependency) -> Bool {
+    private func isDependencyStatic(dependency: GraphDependency) -> Bool {
         switch dependency {
         case .macro:
             return false
@@ -1368,35 +1368,13 @@ public class GraphTraverser: GraphTraversing {
         return target.target.product == .framework
     }
 
-    func isDependencyDynamicTarget(dependency: GraphDependency) -> Bool {
+    private func isEmbeddableDependencyTarget(dependency: GraphDependency) -> Bool {
         switch dependency {
-        case .macro: return false
-        case .xcframework: return false
-        case .framework: return false
-        case .library: return false
-        case .bundle: return false
-        case .packageProduct: return false
+        case .macro, .xcframework, .framework, .library, .bundle, .packageProduct, .sdk:
+            return false
         case let .target(name, path, _):
             guard let target = target(path: path, name: name) else { return false }
-            return target.target.product.isDynamic
-        case .sdk: return false
-        }
-    }
-
-    func isDependencyPrecompiledDynamicAndLinkable(dependency: GraphDependency) -> Bool {
-        switch dependency {
-        case let .xcframework(xcframework):
-            return xcframework.linking == .dynamic
-        case let .framework(_, _, _, _, linking, _, _),
-             let .library(
-                 path: _, publicHeaders: _, linking: linking, architectures: _, swiftModuleMap: _
-             ):
-            return linking == .dynamic
-        case .bundle: return false
-        case .packageProduct: return false
-        case .target: return false
-        case .sdk: return false
-        case .macro: return false
+            return target.target.product.isDynamic || target.target.product == .staticFramework
         }
     }
 
@@ -1594,13 +1572,22 @@ public class GraphTraverser: GraphTraversing {
 
 // swiftlint:enable type_body_length
 
-extension GraphDependency {
-    fileprivate var xcframeworkDependency: GraphDependency.XCFramework? {
+private extension GraphDependency {
+    var xcframeworkDependency: GraphDependency.XCFramework? {
         switch self {
         case let .xcframework(xcframework):
             return xcframework
         default:
             return nil
+        }
+    }
+
+    var isStaticFramework: Bool {
+        switch self {
+        case let .xcframework(xcframework):
+            return xcframework.linking == .static
+        case .macro, .framework, .bundle, .packageProduct, .target, .sdk, .library:
+            return false
         }
     }
 }
