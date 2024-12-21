@@ -8,8 +8,8 @@ public struct ContentView: View {
             Text("Hello, World!")
                 .padding()
             HStack {
-                Image(.assets_image)
-                Image(.assets_nestedimage)
+                AppWithOnDemandResourcesAsset.Assets.image.swiftUIImage
+                AppWithOnDemandResourcesAsset.Assets.nestedimage.swiftUIImage
             }
         }
     }
